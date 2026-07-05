@@ -53,11 +53,10 @@ class CHASMSample:
 
 def load_chasm_dataset(
     dataset_name: str = DATASET_NAME,
-    trust_remote_code: bool = True,
     streaming: bool = False,
 ):
     """加载 CHASM 数据集并合并 train 分片。"""
-    raw = load_dataset(dataset_name, trust_remote_code=trust_remote_code, streaming=streaming)
+    raw = load_dataset(dataset_name, streaming=streaming)
 
     if streaming:
         return raw
@@ -82,8 +81,49 @@ def load_chasm_dataset(
     return DatasetDict(merged)
 
 
+def _parse_label(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "ad", "covert", "covert_ad"}:
+        return 1
+    if text in {"0", "false", "no", "non-ad", "normal"}:
+        return 0
+    return int(float(text))
+
+
+def extract_comment_texts(comments: Any) -> list[str]:
+    """兼容 HF 上多种 comments 字段格式。"""
+    if comments is None:
+        return []
+    if isinstance(comments, str):
+        text = comments.strip()
+        if not text:
+            return []
+        try:
+            import json
+            return extract_comment_texts(json.loads(text))
+        except (json.JSONDecodeError, TypeError):
+            return [text]
+    if isinstance(comments, dict):
+        for key in ("content", "text", "comment", "body", "message"):
+            if comments.get(key):
+                return [str(comments[key])]
+        return [str(v) for v in comments.values() if isinstance(v, str) and v.strip()]
+    if isinstance(comments, list):
+        out: list[str] = []
+        for item in comments:
+            out.extend(extract_comment_texts(item))
+        return out
+    return [str(comments)]
+
+
 def normalize_sample(raw: dict[str, Any], split: str = "unknown") -> CHASMSample:
-    comments = raw.get("comments", [])
+    comments = extract_comment_texts(raw.get("comments", []))
     images = raw.get("images") or raw.get("image") or []
     if images and not isinstance(images, list):
         images = [images]
@@ -93,10 +133,25 @@ def normalize_sample(raw: dict[str, Any], split: str = "unknown") -> CHASMSample
         description=str(raw.get("description", "") or ""),
         comments=comments,
         images=images,
-        label=int(raw.get("label", 0)),
+        label=_parse_label(raw.get("label", 0)),
         split=str(raw.get("split", split)),
         date=str(raw.get("date", "") or ""),
     )
+
+
+def print_dataset_stats(dataset) -> None:
+    """打印各 split 样本量与标签分布，便于排查加载问题。"""
+    print("=== CHASM Dataset Stats ===")
+    for split in dataset.keys():
+        labels = [_parse_label(dataset[split][i].get("label", 0)) for i in range(len(dataset[split]))]
+        pos = sum(labels)
+        neg = len(labels) - pos
+        avg_len = 0.0
+        if labels:
+            sample = normalize_sample(dataset[split][0], split=split)
+            avg_len = sum(len(normalize_sample(dataset[split][i], split=split).text) for i in range(min(100, len(labels)))) / min(100, len(labels))
+        print(f"  {split}: n={len(labels)}, pos={pos}, neg={neg}, avg_text_len~{avg_len:.0f}")
+    print("============================")
 
 
 def resolve_split(dataset, split: str) -> str:

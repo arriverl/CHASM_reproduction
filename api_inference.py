@@ -77,7 +77,7 @@ def load_huggingface_dataset():
     
     try:
         print(f"Attempting to load dataset: {dataset_name}")
-        dataset = load_dataset(dataset_name, trust_remote_code=True)
+        dataset = load_dataset(dataset_name)
         
         print(f"\nDataset loaded successfully!")
         print(f"Dataset structure: {dataset}")

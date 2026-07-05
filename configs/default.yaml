@@ -8,7 +8,7 @@ project:
 
 dataset:
   name: Jingyi77/CHASM-Covert_Advertisement_on_RedNote
-  trust_remote_code: true
+  # datasets>=3.0 已弃用 trust_remote_code
   # 完整数据集约 9.92GB；开发调试可设 max_samples
   max_samples: null
   splits:

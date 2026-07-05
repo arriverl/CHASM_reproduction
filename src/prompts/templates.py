@@ -59,14 +59,8 @@ def format_post_text(
     parts = [title or "", description or ""]
     if include_comments and comments:
         if isinstance(comments, list):
-            comment_texts = []
-            for c in comments:
-                if isinstance(c, dict):
-                    comment_texts.append(c.get("content", str(c)))
-                else:
-                    comment_texts.append(str(c))
-            parts.append(" ".join(comment_texts))
-        elif isinstance(comments, str):
+            parts.append(" ".join(str(c) for c in comments if c))
+        elif isinstance(comments, str) and comments.strip():
             parts.append(comments)
     return "\n".join(p.strip() for p in parts if p and p.strip())
 
