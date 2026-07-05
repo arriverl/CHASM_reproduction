@@ -96,10 +96,46 @@ def compare_with_paper(
 
 
 def parse_binary_output(text: str) -> int:
+    """解析模型输出为 0/1。兼容纯数字、中文回答等格式。"""
+    import re
+
     text = (text or "").strip()
+    if not text:
+        return 0
+
     if text in {"0", "1"}:
         return int(text)
-    for ch in text:
-        if ch in {"0", "1"}:
+
+    # 优先看最后一行（模型常在末尾给答案）
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if lines:
+        last = lines[-1]
+        if last in {"0", "1"}:
+            return int(last)
+        m = re.fullmatch(r"[`'\"]?([01])[`'\"]?", last)
+        if m:
+            return int(m.group(1))
+
+    # 独立出现的 0 或 1
+    matches = re.findall(r"(?<![0-9])([01])(?![0-9])", text)
+    if matches:
+        return int(matches[-1])
+
+    lower = text.lower()
+    # 中文：先判否定，避免「不是广告」被「广告」误判
+    non_ad_phrases = ["不是广告", "非广告", "不含广告", "没有广告", "不算广告", "不是隐性广告", "无广告"]
+    for phrase in non_ad_phrases:
+        if phrase in text:
+            return 0
+    ad_phrases = ["是广告", "隐性广告", "是隐性广告", "包含广告", "含有广告", "属于广告", "推广", "带货"]
+    for phrase in ad_phrases:
+        if phrase in text:
+            return 1
+    if any(kw in lower for kw in ("advertisement", "covert ad", "covert advertisement")):
+        return 1
+
+    # 单字符兜底：取最后一个 0/1
+    for ch in reversed(text):
+        if ch in "01":
             return int(ch)
     return 0

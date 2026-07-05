@@ -1,0 +1,26 @@
+# 实验输出（不应提交，避免 pull 冲突）
+outputs/
+*.joblib
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 环境
+.env
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 数据缓存（本地下载的 HF 数据集在 ~/.cache，不在此目录）
+data/
+*.parquet
+*.tar

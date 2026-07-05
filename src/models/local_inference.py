@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import gc
 import io
 from pathlib import Path
@@ -15,17 +16,21 @@ from src.prompts.templates import format_post_text, get_prompt
 
 
 def print_gpu_status(min_free_gb: float = 8.0) -> None:
+    import os
     try:
         import torch
     except ImportError:
         return
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES", "(all)")
+    print(f"CUDA_VISIBLE_DEVICES={visible}  →  进程内 GPU 编号从 0 重新映射")
     if not torch.cuda.is_available():
         print("CUDA 不可用，将使用 CPU（极慢）")
         return
     for i in range(torch.cuda.device_count()):
         free, total = torch.cuda.mem_get_info(i)
         free_gb, total_gb = free / 1e9, total / 1e9
-        print(f"GPU {i}: 空闲 {free_gb:.2f}GB / 总计 {total_gb:.2f}GB")
+        name = torch.cuda.get_device_name(i)
+        print(f"  进程内 GPU {i}: {name}, 空闲 {free_gb:.2f}GB / 总计 {total_gb:.2f}GB")
         if free_gb < min_free_gb:
             print(
                 f"  ⚠ GPU {i} 空闲不足 {min_free_gb}GB！"
@@ -103,7 +108,7 @@ def build_messages(user_prompt: str, pil_images: list[Image.Image]) -> list[dict
     return [{"role": "user", "content": user_prompt}]
 
 
-def predict_one(model, processor, user_prompt: str, pil_images: list[Image.Image]) -> int:
+def predict_one(model, processor, user_prompt: str, pil_images: list[Image.Image]) -> tuple[int, str]:
     import torch
 
     messages = build_messages(user_prompt, pil_images)
@@ -115,18 +120,21 @@ def predict_one(model, processor, user_prompt: str, pil_images: list[Image.Image
         inputs = processor(text=[text], return_tensors="pt")
 
     inputs = {k: v.to(model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    input_len = inputs["input_ids"].shape[1]
 
     with torch.inference_mode():
         output_ids = model.generate(
             **inputs,
-            max_new_tokens=8,
+            max_new_tokens=16,
             do_sample=False,
         )
 
-    # 只解码新生成部分
-    gen_ids = output_ids[:, inputs["input_ids"].shape[1]:]
-    resp = processor.batch_decode(gen_ids, skip_special_tokens=True)[0]
-    return parse_binary_output(resp.strip())
+    # 只解码新生成的 token（逐条 slice，避免 padding 导致空输出）
+    new_ids = output_ids[0, input_len:]
+    tokenizer = getattr(processor, "tokenizer", processor)
+    resp = tokenizer.decode(new_ids, skip_special_tokens=True).strip()
+    pred = parse_binary_output(resp)
+    return pred, resp
 
 
 def run_local_inference(
@@ -151,43 +159,61 @@ def run_local_inference(
 
     prompt_header = get_prompt(mode)
     y_true, y_pred = [], []
+    records = []
 
-    for i, sample in enumerate(iter_split(dataset, split, max_samples=max_samples)):
-        text = format_post_text(
-            sample.title,
-            sample.description,
-            sample.comments if include_comments else [],
-            include_comments=include_comments,
-        )
-        user_prompt = f"{prompt_header}\n\n{text}"
+    csv_path = output_dir / f"predictions_{split}.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["id", "label", "pred", "raw_response"])
 
-        pil_images = load_pil_images(sample, max_images=max_images) if include_images else []
+        for i, sample in enumerate(iter_split(dataset, split, max_samples=max_samples)):
+            text = format_post_text(
+                sample.title,
+                sample.description,
+                sample.comments if include_comments else [],
+                include_comments=include_comments,
+            )
+            user_prompt = f"{prompt_header}\n\n[Post]\n{text}"
 
-        try:
-            pred = predict_one(model, processor, user_prompt, pil_images)
-        except Exception as e:
-            if "out of memory" in str(e).lower() and pil_images:
+            pil_images = load_pil_images(sample, max_images=max_images) if include_images else []
+
+            try:
+                pred, raw_resp = predict_one(model, processor, user_prompt, pil_images)
+            except Exception as e:
+                if "out of memory" in str(e).lower() and pil_images:
+                    import torch
+                    print(f"  [{i}] OOM with images, retry text-only...")
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    pred, raw_resp = predict_one(model, processor, user_prompt, [])
+                else:
+                    raise
+
+            y_true.append(sample.label)
+            y_pred.append(pred)
+            writer.writerow([sample.id, sample.label, pred, raw_resp])
+            records.append({"id": sample.id, "label": sample.label, "pred": pred, "raw": raw_resp})
+
+            if i < 3:
+                print(f"  [debug] id={sample.id} label={sample.label} pred={pred} raw={raw_resp!r}")
+
+            if (i + 1) % 5 == 0:
+                pos_pred = sum(y_pred)
+                print(f"  {i + 1} samples | pred_1={pos_pred} pred_0={len(y_pred)-pos_pred}")
                 import torch
-                print(f"  [{i}] OOM with images, retry text-only...")
-                torch.cuda.empty_cache()
-                gc.collect()
-                pred = predict_one(model, processor, user_prompt, [])
-            else:
-                raise
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-        y_true.append(sample.label)
-        y_pred.append(pred)
-
-        if (i + 1) % 5 == 0:
-            print(f"  {i + 1} samples processed")
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+    pred_pos = sum(y_pred)
+    pred_neg = len(y_pred) - pred_pos
+    true_pos = sum(y_true)
+    print(f"Predictions: pred_1={pred_pos}, pred_0={pred_neg} | gold_1={true_pos}, gold_0={len(y_true)-true_pos}")
 
     metrics = compute_metrics(y_true, y_pred)
     tag = model_id.split("/")[-1]
     save_metrics(metrics, output_dir / f"{tag}_{mode}_{split}_metrics.json")
-    print(f"F1={metrics.f1:.4f} P={metrics.precision:.4f} R={metrics.recall:.4f}")
+    print(f"F1={metrics.f1:.4f} P={metrics.precision:.4f} R={metrics.recall:.4f} (paper ZS target≈0.421)")
+    print(f"Saved predictions: {csv_path}")
     return metrics
 
 
