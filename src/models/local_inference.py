@@ -166,7 +166,14 @@ def run_local_inference(
         writer = csv.writer(csv_file)
         writer.writerow(["id", "label", "pred", "raw_response"])
 
-        for i, sample in enumerate(iter_split(dataset, split, max_samples=max_samples)):
+        for i, sample in enumerate(
+            iter_split(
+                dataset, split,
+                max_samples=max_samples,
+                stratified=max_samples is not None,
+                seed=42,
+            )
+        ):
             text = format_post_text(
                 sample.title,
                 sample.description,
@@ -208,6 +215,14 @@ def run_local_inference(
     pred_neg = len(y_pred) - pred_pos
     true_pos = sum(y_true)
     print(f"Predictions: pred_1={pred_pos}, pred_0={pred_neg} | gold_1={true_pos}, gold_0={len(y_true)-true_pos}")
+
+    if true_pos == 0:
+        print(
+            "⚠ 警告: 评估子集中没有正类样本 (gold_1=0)，F1 无意义！"
+            " 请去掉 --max-samples 跑全量 test(1000条)，或 git pull 使用分层抽样。"
+        )
+    if pred_pos == 0 and true_pos > 0:
+        print("⚠ 警告: 模型未预测任何正类，检查 raw_response 列。")
 
     metrics = compute_metrics(y_true, y_pred)
     tag = model_id.split("/")[-1]

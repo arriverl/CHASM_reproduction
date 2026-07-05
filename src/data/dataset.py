@@ -171,11 +171,34 @@ def iter_split(
     max_samples: int | None = None,
     shuffle: bool = False,
     seed: int = 42,
+    stratified: bool = False,
 ) -> Iterator[CHASMSample]:
+    """
+    遍历数据集 split。
+
+    stratified=True 时按标签比例抽样（用于 --max-samples 快速评估）。
+    CHASM test 集前面大量负样本，直接取前 N 条会导致 gold_1=0、F1 恒为 0。
+    """
     split = resolve_split(dataset, split)
     data = dataset[split]
     indices = list(range(len(data)))
-    if shuffle:
+
+    if stratified and max_samples is not None and max_samples < len(indices):
+        pos_idx, neg_idx = [], []
+        for idx in indices:
+            label = _parse_label(data[idx].get("label", 0))
+            (pos_idx if label == 1 else neg_idx).append(idx)
+        rng = random.Random(seed)
+        rng.shuffle(pos_idx)
+        rng.shuffle(neg_idx)
+        ratio = len(pos_idx) / len(indices) if indices else 0.0
+        n_pos = min(len(pos_idx), max(1, round(max_samples * ratio))) if pos_idx else 0
+        n_neg = min(len(neg_idx), max_samples - n_pos)
+        if n_pos + n_neg < max_samples:
+            n_pos = min(len(pos_idx), max_samples - n_neg)
+        indices = pos_idx[:n_pos] + neg_idx[:n_neg]
+        rng.shuffle(indices)
+    elif shuffle or (max_samples is not None and max_samples < len(indices)):
         rng = random.Random(seed)
         rng.shuffle(indices)
 
