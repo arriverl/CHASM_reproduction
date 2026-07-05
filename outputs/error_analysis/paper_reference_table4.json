@@ -1,0 +1,30 @@
+{
+  "GPT4o(ZS)": {
+    "insufficient_evidence": 22,
+    "missing_clue": 10,
+    "language_style": 8,
+    "post_structure": 3,
+    "other": 3
+  },
+  "DeepSeek-V3(ICL)": {
+    "insufficient_evidence": 16,
+    "missing_clue": 15,
+    "language_style": 9,
+    "post_structure": 2,
+    "other": 2
+  },
+  "Qwen2.5(ZS)": {
+    "insufficient_evidence": 38,
+    "missing_clue": 32,
+    "language_style": 16,
+    "post_structure": 6,
+    "other": 6
+  },
+  "Qwen2.5(FT)": {
+    "insufficient_evidence": 6,
+    "missing_clue": 14,
+    "language_style": 5,
+    "post_structure": 6,
+    "other": 3
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+  "folds": [
+    {
+      "fold": 0,
+      "train": 1746,
+      "val": 1747
+    },
+    {
+      "fold": 1,
+      "train": 1747,
+      "val": 1746
+    }
+  ],
+  "status": "dry_run_ok"
+}

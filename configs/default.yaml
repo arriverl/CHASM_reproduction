@@ -1,0 +1,107 @@
+# CHASM 论文复现默认配置 (NeurIPS 2025)
+# 论文: CHASM: Unveiling Covert Advertisements on Chinese Social Media
+
+project:
+  name: CHASM_reproduction
+  seed: 42
+  output_dir: outputs
+
+dataset:
+  name: Jingyi77/CHASM-Covert_Advertisement_on_RedNote
+  trust_remote_code: true
+  # 完整数据集约 9.92GB；开发调试可设 max_samples
+  max_samples: null
+  splits:
+    train: 3493
+    validation: 499
+    test: 1000
+
+evaluation:
+  metrics: [precision, recall, f1, auc]
+  primary_metric: f1
+  # 论文 Table 2/3 在 test split 上评估
+  eval_split: test
+
+prompt:
+  mode: zero_shot  # zero_shot | in_context | detailed_zero_shot | detailed_in_context
+  include_images: true
+  include_comments: true
+
+finetune:
+  # Appendix B 超参数
+  lora_rank: 8
+  lora_alpha: 32
+  lora_target: all_linear
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  num_epochs: 3
+  learning_rate: 1.0e-4
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1.0e-8
+  lr_scheduler: cosine
+  warmup_ratio: 0.0
+  max_seq_length: 4096
+  truncation_strategy: delete
+  bf16: true
+  cross_validation_folds: 5
+
+models:
+  open_source_small:
+    - name: DeepSeek-VL2-small
+      hf_id: deepseek-ai/deepseek-vl2-small
+    - name: InternVL2.5-8B
+      hf_id: OpenGVLab/InternVL2_5-8B
+    - name: LLaVA-NeXT-8B
+      hf_id: llava-hf/llava-v1.6-vicuna-8b-hf
+    - name: Qwen2.5-VL-7B
+      hf_id: Qwen/Qwen2.5-VL-7B-Instruct
+  open_source_large:
+    - name: DeepSeek-V3
+      hf_id: deepseek-ai/DeepSeek-V3
+    - name: Llama-4-Maverick
+      hf_id: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
+  proprietary:
+    - name: GPT-4o
+      api_id: gpt-4o-2024-08-06
+    - name: GPT-4o-mini
+      api_id: gpt-4o-mini-2024-07-18
+    - name: Qwen-Max
+      api_id: qwen-max
+    - name: GLM4-Flash
+      api_id: glm-4-flash
+    - name: GLM4-Plus
+      api_id: glm-4-plus
+    - name: Gemini-2.0-flash
+      api_id: gemini-2.0-flash
+    - name: Gemini-2.5-Pro
+      api_id: gemini-2.5-pro
+    - name: Step-R1-V-Mini
+      api_id: step-r1-v-mini
+    - name: QvQ-Max
+      api_id: qvq-max
+
+# 论文报告的目标结果 (Table 2/3/7, Figure 3)
+paper_targets:
+  zero_shot:
+    GPT-4o: {precision: 0.464, recall: 0.836, f1: 0.597, auc: 0.851}
+    Qwen2.5-7B: {precision: 0.473, recall: 0.378, f1: 0.421, auc: 0.660}
+    InternVL2.5: {precision: 0.289, recall: 0.662, f1: 0.403, auc: 0.717}
+    DeepSeek-V3: {precision: 0.499, recall: 0.787, f1: 0.571, auc: 0.826}
+  in_context:
+    GPT-4o: {precision: 0.442, recall: 0.633, f1: 0.521, auc: 0.762}
+    DeepSeek-V3: {precision: 0.578, recall: 0.607, f1: 0.592, auc: 0.772}
+    Qwen2.5-7B: {precision: 0.505, recall: 0.380, f1: 0.434, auc: 0.664}
+  finetune:
+    Qwen2.5-7B: {precision: 0.783, recall: 0.732, f1: 0.756, auc: 0.852}
+    InternVL2.5: {precision: 0.681, recall: 0.520, f1: 0.590, auc: 0.743}
+  baselines:
+    TF-IDF_LR: {accuracy: 0.647, precision: 0.655, recall: 0.648, f1: 0.644}
+    TF-IDF_SVM: {accuracy: 0.624, precision: 0.629, recall: 0.624, f1: 0.620}
+    BERT_ResNet: {accuracy: 0.653, precision: 0.722, recall: 0.653, f1: 0.615}
+    CLIP: {accuracy: 0.622, precision: 0.622, recall: 0.622, f1: 0.622}
+  modality_ablation_qwen_ft:
+    baseline: {precision: 0.783, recall: 0.732, f1: 0.756, auc: 0.852}
+    w_o_comments: {precision: 0.680, recall: 0.440, f1: 0.540, auc: 0.710}
+    w_o_images: {precision: 0.650, recall: 0.590, f1: 0.620, auc: 0.770}
