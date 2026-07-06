@@ -42,6 +42,7 @@ def load_model_and_processor(
     model_id: str,
     load_4bit: bool = False,
     load_8bit: bool = False,
+    lora_path: str | None = None,
 ):
     import torch
     from transformers import AutoProcessor
@@ -81,6 +82,10 @@ def load_model_and_processor(
 
     print(f"Loading {model_id} (4bit={load_4bit}, 8bit={load_8bit})...")
     model = VLModel.from_pretrained(model_id, **model_kwargs)
+    if lora_path:
+        from peft import PeftModel
+        print(f"Loading LoRA adapter from {lora_path}")
+        model = PeftModel.from_pretrained(model, lora_path)
     model.eval()
     return model, processor
 
@@ -148,11 +153,14 @@ def run_local_inference(
     max_images: int = 1,
     load_4bit: bool = False,
     load_8bit: bool = False,
+    lora_path: str | None = None,
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print_gpu_status()
-    model, processor = load_model_and_processor(model_id, load_4bit=load_4bit, load_8bit=load_8bit)
+    model, processor = load_model_and_processor(
+        model_id, load_4bit=load_4bit, load_8bit=load_8bit, lora_path=lora_path
+    )
 
     dataset = load_chasm_dataset()
     print_dataset_stats(dataset)
@@ -244,6 +252,7 @@ def main():
     parser.add_argument("--max-images", type=int, default=1, help="每条样本最多使用几张图（默认1）")
     parser.add_argument("--load-4bit", action="store_true", help="4bit 量化加载，约需 6-8GB 显存")
     parser.add_argument("--load-8bit", action="store_true", help="8bit 量化加载")
+    parser.add_argument("--lora-path", type=str, default=None, help="微调后的 LoRA 目录，如 outputs/finetune/lora_adapter")
     args = parser.parse_args()
 
     if args.load_4bit and args.load_8bit:
@@ -260,6 +269,7 @@ def main():
         max_images=args.max_images,
         load_4bit=args.load_4bit,
         load_8bit=args.load_8bit,
+        lora_path=args.lora_path,
     )
 
 
